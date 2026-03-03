@@ -2,14 +2,14 @@
 
 ![Architecture](docs/architecture.png)
 
-Telegram bridge for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), deployed as a container on Kubernetes. Talk to Claude from your phone.
+Telegram bridge for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Talk to Claude from your phone. Runs anywhere Docker runs -- your laptop, a VPS, or a Kubernetes cluster.
 
 ## Architecture
 
 - **Runtime**: Go binary that long-polls Telegram and spawns `claude -p` subprocesses
 - **Container**: Multi-stage Docker build (Go compilation + Ubuntu base with Claude CLI)
 - **Orchestration**: Kubernetes (any cluster) or standalone Docker
-- **Storage**: PersistentVolumeClaim for sessions, memory, skills, and projects
+- **Storage**: Persistent volume for sessions, memory, skills, and projects
 - **Voice**: ElevenLabs TTS -> OGG/OPUS -> Telegram voice notes (optional)
 - **Auth**: Claude subscription via OAuth token (no metered API billing)
 
@@ -63,12 +63,100 @@ Voice is configured in `settings.json` under `telegramBridge.voice`. If the API 
 
 ## Prerequisites
 
+- Docker (or Docker-compatible runtime)
 - A Claude Code subscription (Pro or Max)
 - A Telegram bot token (from [@BotFather](https://t.me/botfather))
-- A container registry (Docker Hub, GHCR, ECR, etc.)
-- A Kubernetes cluster (or Docker for standalone)
 - (Optional) ElevenLabs API key for voice
 - (Optional) PostgreSQL database for Ralph task management
+
+## Quick Start
+
+```bash
+git clone https://github.com/b1ackmartian/pai-bridge.git
+cd pai-bridge
+
+# Configure
+cp .env.example .env           # Edit with your tokens
+cp settings.example.json settings.json  # Customize if needed
+
+# Run
+docker compose up -d
+
+# Check health
+docker compose logs -f
+```
+
+Then message your bot on Telegram.
+
+### Getting your tokens
+
+1. **Telegram bot token**: Message [@BotFather](https://t.me/botfather) on Telegram, send `/newbot`, follow the prompts
+2. **Telegram user ID**: Message [@userinfobot](https://t.me/userinfobot) to get your numeric ID
+3. **Claude auth**: The container runs `claude` CLI which authenticates on first use. Run `docker compose exec pai-bridge claude` to complete the OAuth flow, or pre-configure with `claude setup-token`
+
+## Deployment
+
+### Docker Compose (recommended)
+
+The `docker-compose.yml` builds the image locally and mounts a persistent volume for session data:
+
+```bash
+docker compose up -d          # Start
+docker compose logs -f        # Watch logs
+docker compose down           # Stop (data persists in volume)
+docker compose down -v        # Stop and delete data
+```
+
+Data persists in a Docker named volume (`pai-data`). Sessions, memory, and configuration survive container restarts.
+
+### Standalone Docker
+
+```bash
+# Build
+docker build -t pai-bridge .
+
+# Run
+docker run -d \
+  --name pai-bridge \
+  --restart unless-stopped \
+  -e TELEGRAM_BOT_TOKEN=your-token \
+  -e TELEGRAM_ALLOWED_USERS=your-user-id \
+  -v pai-data:/mnt/pai-data \
+  -v $(pwd)/settings.json:/etc/pai-bridge/settings.json:ro \
+  pai-bridge
+```
+
+### VPS
+
+Same as Docker Compose -- just SSH to your server first:
+
+```bash
+ssh you@your-vps
+git clone https://github.com/b1ackmartian/pai-bridge.git
+cd pai-bridge
+cp .env.example .env && nano .env
+cp settings.example.json settings.json
+docker compose up -d
+```
+
+The `restart: unless-stopped` policy means the bridge starts automatically after reboots.
+
+### Kubernetes
+
+1. Build and push the container image to your registry
+2. Create a namespace and deploy the manifests (Deployment, Service, PVC, ConfigMap)
+3. Create a Kubernetes Secret with the required keys (see below)
+4. The bridge runs as a single replica (`Recreate` strategy -- only one Telegram poller per bot token)
+
+#### K8s Secrets
+
+| Key | Description |
+|-----|-------------|
+| `claude-oauth-token` | Claude Code OAuth token (`claude setup-token`) |
+| `telegram-bot-token` | Telegram bot token from @BotFather |
+| `telegram-allowed-users` | Comma-separated Telegram user IDs |
+| `elevenlabs-api-key` | ElevenLabs API key for TTS (optional) |
+| `database-url` | PostgreSQL connection string for Ralph (optional) |
 
 ## Container Image
 
@@ -85,37 +173,16 @@ FROM ubuntu:24.04
 ```
 
 The entrypoint (`k8s/entrypoint.sh`) handles:
-- PVC directory structure creation
-- Symlinking `/home/claude/.claude` -> PVC for persistent config/data
-- Merging ConfigMap base settings with PVC settings via `jq`
+- Directory structure creation on the persistent volume
+- Symlinking `/home/claude/.claude` -> volume for persistent config/data
+- Merging base settings with volume settings via `jq`
 - Injecting secrets from environment variables into `settings.json`
-
-## Deployment
-
-### Kubernetes
-
-1. Build and push the container image to your registry
-2. Create a namespace and deploy the manifests (Deployment, Service, PVC, ConfigMap)
-3. Create a Kubernetes Secret with the required keys (see below)
-4. The bridge runs as a single replica (`Recreate` strategy -- only one Telegram poller per bot token)
-
-### Secrets
-
-Create a Kubernetes Secret with these keys:
-
-| Key | Description |
-|-----|-------------|
-| `claude-oauth-token` | Claude Code OAuth token (`claude setup-token`) |
-| `telegram-bot-token` | Telegram bot token from @BotFather |
-| `telegram-allowed-users` | Comma-separated Telegram user IDs |
-| `elevenlabs-api-key` | ElevenLabs API key for TTS (optional) |
-| `database-url` | PostgreSQL connection string for Ralph (optional) |
 
 ## CI/CD
 
 ### Build Image (`build-k8s.yml`)
 
-Builds and pushes the container image on pushes to main that touch `bridge-go/`, `k8s/`, or `Dockerfile.k8s`. Configure the workflow with your own registry credentials.
+Builds and pushes the container image on pushes to main that touch `bridge-go/`, `k8s/`, or `Dockerfile`. Configure the workflow with your own registry credentials.
 
 ### Tests (`test.yml`)
 

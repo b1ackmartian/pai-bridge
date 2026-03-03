@@ -6,7 +6,7 @@ on:
     paths:
       - 'bridge-go/**'
       - 'k8s/**'
-      - 'Dockerfile.k8s'
+      - 'Dockerfile'
   workflow_dispatch:
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
         run: |
           SHORT_SHA="${GITHUB_SHA::8}"
           IMAGE="your-registry/pai-bridge"
-          docker build -f Dockerfile.k8s \
+          docker build \
             -t ${IMAGE}:${SHORT_SHA} \
             -t ${IMAGE}:latest \
             .

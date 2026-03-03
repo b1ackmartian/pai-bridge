@@ -1,0 +1,32 @@
+services:
+  pai-bridge:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pai-data:/mnt/pai-data
+      - ./settings.json:/etc/pai-bridge/settings.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:7777/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    # Optional: PostgreSQL for Ralph task management
+    # Uncomment and add PAI_DATABASE_URL to .env
+    # depends_on:
+    #   - postgres
+
+  # postgres:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: pai
+  #     POSTGRES_USER: pai
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pai-data:
+  # pgdata:

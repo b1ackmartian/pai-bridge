@@ -1,0 +1,24 @@
+{
+  "telegramBridge": {
+    "enabled": true,
+    "sessions": {
+      "timeout_minutes": 240,
+      "max_concurrent": 2,
+      "default_work_dir": "~/projects",
+      "default_model": "claude-sonnet-4-5-20250929",
+      "reset_hour": 4,
+      "timezone": "America/New_York"
+    },
+    "memory": {
+      "enabled": true,
+      "base_path": "/mnt/pai-data/memory",
+      "max_summaries": 5,
+      "retention_days": 14
+    },
+    "voice": {
+      "enabled": false,
+      "voice_id": "",
+      "model": "eleven_turbo_v2_5"
+    }
+  }
+}
