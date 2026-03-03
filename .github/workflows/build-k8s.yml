@@ -1,0 +1,40 @@
+name: Build K8s Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bridge-go/**'
+      - 'k8s/**'
+      - 'Dockerfile.k8s'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Configure your container registry authentication here.
+      # Examples:
+      #   - Docker Hub: docker/login-action@v3
+      #   - GHCR: docker/login-action@v3 with registry: ghcr.io
+      #   - ECR: aws-actions/amazon-ecr-login@v2
+      #   - DOCR: digitalocean/action-doctl@v2 + doctl registry login
+
+      - name: Build and push
+        run: |
+          SHORT_SHA="${GITHUB_SHA::8}"
+          IMAGE="your-registry/pai-bridge"
+          docker build -f Dockerfile.k8s \
+            -t ${IMAGE}:${SHORT_SHA} \
+            -t ${IMAGE}:latest \
+            .
+          docker push ${IMAGE}:${SHORT_SHA}
+          docker push ${IMAGE}:latest
