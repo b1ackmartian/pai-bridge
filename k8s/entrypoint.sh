@@ -3,13 +3,13 @@ set -euo pipefail
 
 echo "[pai-bridge] Starting entrypoint..."
 
-# Ensure PVC directories exist
+# Ensure data directories exist on the persistent volume
 mkdir -p /mnt/pai-data/claude \
          /mnt/pai-data/memory \
          /mnt/pai-data/projects \
          /mnt/pai-data/claude/skills/TelegramBridge/state
 
-# Symlink Claude home dirs to PVC
+# Symlink Claude home dirs to persistent volume
 rm -rf /home/claude/.claude /home/claude/projects
 ln -sf /mnt/pai-data/claude /home/claude/.claude
 ln -sf /mnt/pai-data/projects /home/claude/projects
@@ -20,14 +20,14 @@ if [ ! -f /home/claude/.claude.json ]; then
 fi
 chown claude:claude /home/claude/.claude.json
 
-# Merge ConfigMap settings with PVC settings
+# Merge mounted settings with existing volume settings
 if [ -f /etc/pai-bridge/settings.json ]; then
   if [ -f /mnt/pai-data/claude/settings.json ]; then
-    echo "[pai-bridge] Merging ConfigMap settings with existing PVC settings..."
+    echo "[pai-bridge] Merging mounted settings with existing volume settings..."
     jq -s '.[0] * .[1]' /mnt/pai-data/claude/settings.json /etc/pai-bridge/settings.json > /tmp/merged-settings.json
     mv /tmp/merged-settings.json /mnt/pai-data/claude/settings.json
   else
-    echo "[pai-bridge] First boot: copying ConfigMap settings to PVC..."
+    echo "[pai-bridge] First boot: copying mounted settings to volume..."
     cp /etc/pai-bridge/settings.json /mnt/pai-data/claude/settings.json
   fi
 fi

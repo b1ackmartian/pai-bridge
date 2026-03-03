@@ -92,7 +92,7 @@ Then message your bot on Telegram.
 
 1. **Telegram bot token**: Message [@BotFather](https://t.me/botfather) on Telegram, send `/newbot`, follow the prompts
 2. **Telegram user ID**: Message [@userinfobot](https://t.me/userinfobot) to get your numeric ID
-3. **Claude auth**: The container runs `claude` CLI which authenticates on first use. Run `docker compose exec pai-bridge claude` to complete the OAuth flow, or pre-configure with `claude setup-token`
+3. **Claude auth**: The container runs `claude` CLI which authenticates on first use. Run `docker compose exec -u claude pai-bridge claude` to complete the OAuth flow, or pre-configure with `claude setup-token`
 
 ## Deployment
 
@@ -212,29 +212,33 @@ Runs `go test` with race detection on pushes and PRs that touch `bridge-go/`.
 
 ## Configuration
 
-The bridge reads its configuration from `settings.json` (under `telegramBridge`):
+The bridge reads its configuration from `settings.json` (under `telegramBridge`). See `settings.example.json` for a minimal working config. All fields are optional and have sensible defaults.
 
-```json
-{
-  "telegramBridge": {
-    "enabled": true,
-    "allowed_users": ["YOUR_TELEGRAM_USER_ID"],
-    "sessions": {
-      "timeout_minutes": 240,
-      "max_concurrent": 2,
-      "default_work_dir": "~/projects",
-      "default_model": "claude-sonnet-4-5-20250929",
-      "reset_hour": 4,
-      "timezone": "America/New_York"
-    },
-    "voice": {
-      "enabled": false,
-      "voice_id": "YOUR_ELEVENLABS_VOICE_ID",
-      "model": "eleven_turbo_v2_5"
-    }
-  }
-}
-```
+| Section | Key | Default | Description |
+|---------|-----|---------|-------------|
+| `sessions` | `timeout_minutes` | 240 | Session idle timeout |
+| `sessions` | `max_concurrent` | 2 | Max concurrent Claude sessions |
+| `sessions` | `default_work_dir` | `~/projects` | Working directory for Claude |
+| `sessions` | `default_model` | `claude-sonnet-4-5-20250929` | Claude model to use |
+| `sessions` | `reset_hour` | 4 | Hour (0-23) for daily session reset. -1 to disable |
+| `sessions` | `timezone` | `America/New_York` | IANA timezone for reset_hour |
+| `sessions` | `subprocess_timeout_minutes` | 120 | Per-message Claude subprocess timeout |
+| `memory` | `enabled` | true | Enable conversation memory |
+| `memory` | `base_path` | `/mnt/pai-data/memory` | Memory storage path |
+| `memory` | `max_summaries` | 5 | Summaries loaded into new sessions |
+| `memory` | `retention_days` | 14 | Base retention: JSONL=1x, daily=2x, summaries=6x |
+| `voice` | `enabled` | false | Enable ElevenLabs TTS |
+| `voice` | `voice_id` | | ElevenLabs voice ID |
+| `voice` | `model` | `eleven_turbo_v2_5` | ElevenLabs model |
+| `security` | `require_passphrase` | false | Require passphrase to use bridge |
+| `security` | `rate_limit_per_minute` | 10 | Message rate limit |
+| `ralph` | `database_url` | | PostgreSQL connection string for Ralph |
+| `ralph` | `max_concurrent` | 3 | Max concurrent Ralph tasks |
+| `ralph` | `default_max_iterations` | 20 | Default Ralph iteration cap |
+| `ralph` | `notification_interval` | 3 | Telegram update every N iterations |
+| `server` | `port` | 7777 | Health check server port |
+
+Secrets (`TELEGRAM_BOT_TOKEN`, `ELEVENLABS_API_KEY`, `TELEGRAM_ALLOWED_USERS`) are injected from environment variables by the entrypoint -- do not hardcode them in `settings.json`.
 
 ## Local Development
 

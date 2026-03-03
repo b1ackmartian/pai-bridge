@@ -1,5 +1,5 @@
 # Multi-stage build: Go bridge binary + Ubuntu base with Claude CLI
-# Produces a self-contained image for K8s deployment
+# Produces a self-contained image that runs anywhere Docker runs
 
 # Stage 1: Build the Go bridge binary
 FROM golang:1.23-alpine AS builder
