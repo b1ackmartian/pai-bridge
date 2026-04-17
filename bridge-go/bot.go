@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,7 +22,7 @@ import (
 
 var imageExtRe = regexp.MustCompile(`(?i)\.(png|jpe?g|gif|webp)$`)
 
-var botLogger = slog.With("component", "bot")
+var botLogger = baseLogger.With("component", "bot")
 
 type Bot struct {
 	api            *tgbotapi.BotAPI

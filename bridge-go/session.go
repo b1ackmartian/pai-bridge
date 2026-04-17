@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +17,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var sessionLogger = slog.With("component", "session")
+var sessionLogger = baseLogger.With("component", "session")
 
 type Session struct {
 	ID              string `json:"id"`

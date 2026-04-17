@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,11 +12,9 @@ import (
 	"time"
 )
 
-var bridgeLogger = slog.With("component", "bridge")
+var bridgeLogger = baseLogger.With("component", "bridge")
 
 func main() {
-	initLogging()
-
 	cfg, err := LoadConfig()
 	if err != nil {
 		bridgeLogger.Error("Failed to load config", "error", err)

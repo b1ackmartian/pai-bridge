@@ -3,13 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-var configLogger = slog.With("component", "config")
+var configLogger = baseLogger.With("component", "config")
 
 type Config struct {
 	Enabled      bool

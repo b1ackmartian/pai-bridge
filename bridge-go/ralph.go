@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var ralphLogger = slog.With("component", "ralph")
+var ralphLogger = baseLogger.With("component", "ralph")
 
 // RalphDirective is the parsed JSON from a RALPH: directive in Claude output.
 type RalphDirective struct {

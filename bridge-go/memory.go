@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +13,7 @@ import (
 	"time"
 )
 
-var memoryLogger = slog.With("component", "memory")
+var memoryLogger = baseLogger.With("component", "memory")
 
 type MemoryManager struct {
 	basePath      string
