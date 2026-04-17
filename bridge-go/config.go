@@ -3,11 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+var configLogger = baseLogger.With("component", "config")
 
 type Config struct {
 	Enabled      bool
@@ -198,7 +199,7 @@ func jsonIntNested(m map[string]json.RawMessage, section, key string, def int) i
 	if v, ok := nested[key]; ok {
 		var i int
 		if err := json.Unmarshal(v, &i); err != nil {
-			log.Printf("[PAI Config] Warning: %s.%s exists but failed to parse as int: %v (using default: %d)", section, key, err, def)
+			configLogger.Warn("Setting failed to parse as int, using default", "section", section, "key", key, "error", err, "default", def)
 		} else {
 			return i
 		}
@@ -214,7 +215,7 @@ func jsonStringNested(m map[string]json.RawMessage, section, key, def string) st
 	if v, ok := nested[key]; ok {
 		var s string
 		if err := json.Unmarshal(v, &s); err != nil {
-			log.Printf("[PAI Config] Warning: %s.%s exists but failed to parse as string: %v (using default: %q)", section, key, err, def)
+			configLogger.Warn("Setting failed to parse as string, using default", "section", section, "key", key, "error", err, "default", def)
 		} else {
 			return s
 		}
@@ -230,7 +231,7 @@ func jsonBoolNested(m map[string]json.RawMessage, section, key string, def bool)
 	if v, ok := nested[key]; ok {
 		var b bool
 		if err := json.Unmarshal(v, &b); err != nil {
-			log.Printf("[PAI Config] Warning: %s.%s exists but failed to parse as bool: %v (using default: %v)", section, key, err, def)
+			configLogger.Warn("Setting failed to parse as bool, using default", "section", section, "key", key, "error", err, "default", def)
 		} else {
 			return b
 		}

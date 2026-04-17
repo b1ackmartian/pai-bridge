@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,8 @@ import (
 
 	_ "github.com/lib/pq"
 )
+
+var ralphLogger = baseLogger.With("component", "ralph")
 
 // RalphDirective is the parsed JSON from a RALPH: directive in Claude output.
 type RalphDirective struct {
@@ -67,7 +68,7 @@ func NewRalphManager(cfg *Config, cred *syscall.Credential) (*RalphManager, erro
 		return nil, fmt.Errorf("ralph: database ping: %w", err)
 	}
 
-	log.Println("[PAI Ralph] Database connected")
+	ralphLogger.Info("Database connected")
 	return &RalphManager{
 		db:               db,
 		config:           cfg,
@@ -125,7 +126,7 @@ func (rm *RalphManager) StartRalph(chatID int64, directive *RalphDirective) (int
 		return 0, fmt.Errorf("insert ralph: %w", err)
 	}
 
-	log.Printf("[PAI Ralph] Created #%d: %q (max_iterations=%d)", id, directive.Title, maxIter)
+	ralphLogger.Info("Task created", "task_id", id, "title", directive.Title, "max_iterations", maxIter)
 	go rm.runLoop(id, chatID, directive, string(spec), maxIter)
 	return id, nil
 }
@@ -143,7 +144,7 @@ func (rm *RalphManager) runLoop(id int, chatID int64, directive *RalphDirective,
 	// Create git branch if applicable
 	if directive.Workspace != "" && directive.Branch != "" {
 		if err := gitCheckoutBranch(directive.Workspace, directive.Branch); err != nil {
-			log.Printf("[PAI Ralph] #%d: branch setup: %v (continuing anyway)", id, err)
+			ralphLogger.Warn("Branch setup failed, continuing anyway", "task_id", id, "error", err)
 		}
 	}
 
@@ -162,14 +163,14 @@ func (rm *RalphManager) runLoop(id int, chatID int64, directive *RalphDirective,
 
 	for i := 1; i <= maxIterations; i++ {
 		if rm.isCancelled(id) {
-			log.Printf("[PAI Ralph] #%d: cancelled", id)
+			ralphLogger.Info("Task cancelled", "task_id", id)
 			rm.setStatus(id, "cancelled")
 			rm.db.Exec("UPDATE pai.ralphs SET finished_at = now() WHERE id = $1", id)
 			rm.notify(chatID, fmt.Sprintf("Ralph #%d cancelled: %s", id, directive.Title))
 			return
 		}
 
-		log.Printf("[PAI Ralph] #%d: iteration %d/%d", id, i, maxIterations)
+		ralphLogger.Info("Iteration starting", "task_id", id, "iteration", i, "max_iterations", maxIterations)
 
 		progress, _ := os.ReadFile(progressPath)
 		prompt := buildRalphPrompt(spec, string(progress), directive, i, maxIterations)
@@ -177,7 +178,7 @@ func (rm *RalphManager) runLoop(id int, chatID int64, directive *RalphDirective,
 		output, err := rm.runClaude(directive, prompt)
 		if err != nil {
 			errMsg := err.Error()
-			log.Printf("[PAI Ralph] #%d: iteration %d failed: %v", id, i, err)
+			ralphLogger.Error("Iteration failed", "task_id", id, "iteration", i, "error", err)
 			rm.db.Exec(
 				`UPDATE pai.ralphs SET iterations = $1, error = $2, status = 'failed', finished_at = now() WHERE id = $3`,
 				i, errMsg, id,
@@ -197,7 +198,7 @@ func (rm *RalphManager) runLoop(id int, chatID int64, directive *RalphDirective,
 		rm.updateIteration(id, i, progressText, artifacts)
 
 		if blocked != "" {
-			log.Printf("[PAI Ralph] #%d: blocked — %s", id, blocked)
+			ralphLogger.Warn("Task blocked", "task_id", id, "reason", blocked)
 			rm.db.Exec(
 				`UPDATE pai.ralphs SET iterations = $1, error = $2, status = 'failed', finished_at = now() WHERE id = $3`,
 				i, "blocked: "+blocked, id,
@@ -216,7 +217,7 @@ func (rm *RalphManager) runLoop(id int, chatID int64, directive *RalphDirective,
 		}
 
 		if complete {
-			log.Printf("[PAI Ralph] #%d: completed after %d iterations", id, i)
+			ralphLogger.Info("Task completed", "task_id", id, "iterations", i)
 			rm.db.Exec("UPDATE pai.ralphs SET status = 'completed', iterations = $1, finished_at = now() WHERE id = $2", i, id)
 			rm.notify(chatID, fmt.Sprintf("Ralph #%d complete: %s (%d iterations)", id, directive.Title, i))
 			return
@@ -224,7 +225,7 @@ func (rm *RalphManager) runLoop(id int, chatID int64, directive *RalphDirective,
 	}
 
 	// Max iterations reached without completion
-	log.Printf("[PAI Ralph] #%d: max iterations (%d) reached", id, maxIterations)
+	ralphLogger.Warn("Max iterations reached", "task_id", id, "max_iterations", maxIterations)
 	rm.db.Exec(`UPDATE pai.ralphs SET status = 'failed', error = 'max iterations reached', finished_at = now() WHERE id = $1`, id)
 	rm.notify(chatID, fmt.Sprintf("Ralph #%d stopped: %s — hit max iterations (%d)", id, directive.Title, maxIterations))
 }
@@ -380,7 +381,7 @@ func parseRalphOutput(output string) (progress string, artifacts map[string][]st
 
 func (rm *RalphManager) setStatus(id int, status string) {
 	if _, err := rm.db.Exec("UPDATE pai.ralphs SET status = $1 WHERE id = $2", status, id); err != nil {
-		log.Printf("[PAI Ralph] #%d: status update failed: %v", id, err)
+		ralphLogger.Warn("Status update failed", "task_id", id, "error", err)
 	}
 }
 
@@ -391,7 +392,7 @@ func (rm *RalphManager) updateIteration(id int, iteration int, progress string, 
 		iteration, progress, string(artifactsJSON), id,
 	)
 	if err != nil {
-		log.Printf("[PAI Ralph] #%d: iteration update failed: %v", id, err)
+		ralphLogger.Warn("Iteration update failed", "task_id", id, "error", err)
 	}
 }
 
