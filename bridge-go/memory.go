@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 )
+
+var memoryLogger = slog.With("component", "memory")
 
 type MemoryManager struct {
 	basePath      string
@@ -44,7 +46,7 @@ func (mm *MemoryManager) LogTurn(userID, sessionID, role, text string) {
 
 	dir := filepath.Join(mm.basePath, "conversations", userID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("[PAI Memory] Failed to create dir %s: %v", dir, err)
+		memoryLogger.Error("Failed to create dir", "dir", dir, "error", err)
 		return
 	}
 
@@ -59,13 +61,13 @@ func (mm *MemoryManager) LogTurn(userID, sessionID, role, text string) {
 
 	data, err := json.Marshal(turn)
 	if err != nil {
-		log.Printf("[PAI Memory] Failed to marshal turn: %v", err)
+		memoryLogger.Error("Failed to marshal turn", "error", err, "session_id", sessionID)
 		return
 	}
 
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("[PAI Memory] Failed to open log %s: %v", logPath, err)
+		memoryLogger.Error("Failed to open log", "log_path", logPath, "error", err)
 		return
 	}
 	defer f.Close()
@@ -129,17 +131,17 @@ func (mm *MemoryManager) FlushSession(userID, sessionID, model string) {
 		return
 	}
 
-	log.Printf("[PAI Memory] Flushing session %s for user %s", sessionID[:8], userID)
+	memoryLogger.Info("Flushing session", "session_id", sessionID, "user_id", userID)
 
 	// Read the conversation log
 	conversationLog, err := mm.ReadConversationLog(userID, sessionID)
 	if err != nil {
-		log.Printf("[PAI Memory] No conversation log to flush for %s: %v", sessionID[:8], err)
+		memoryLogger.Info("No conversation log to flush", "session_id", sessionID, "error", err)
 		return
 	}
 
 	if strings.TrimSpace(conversationLog) == "" {
-		log.Printf("[PAI Memory] Empty conversation log for %s, skipping flush", sessionID[:8])
+		memoryLogger.Info("Empty conversation log, skipping flush", "session_id", sessionID)
 		return
 	}
 
@@ -168,9 +170,9 @@ func (mm *MemoryManager) FlushSession(userID, sessionID, model string) {
 
 	if err != nil || summary == "" {
 		if err != nil {
-			log.Printf("[PAI Memory] Claude summarization failed for %s: %v — writing raw fallback", sessionID[:8], err)
+			memoryLogger.Warn("Claude summarization failed, writing raw fallback", "session_id", sessionID, "error", err)
 		} else {
-			log.Printf("[PAI Memory] Empty summary for %s — writing raw fallback", sessionID[:8])
+			memoryLogger.Warn("Empty summary, writing raw fallback", "session_id", sessionID)
 		}
 		summary = mm.rawFallbackSummary(conversationLog)
 		if summary == "" {
@@ -181,7 +183,7 @@ func (mm *MemoryManager) FlushSession(userID, sessionID, model string) {
 	// Write the summary file
 	dir := filepath.Join(mm.basePath, "summaries", userID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("[PAI Memory] Failed to create summaries dir: %v", err)
+		memoryLogger.Error("Failed to create summaries dir", "dir", dir, "error", err)
 		return
 	}
 
@@ -193,11 +195,11 @@ func (mm *MemoryManager) FlushSession(userID, sessionID, model string) {
 	summaryPath := filepath.Join(dir, fmt.Sprintf("%s-%s.md", date, shortID))
 
 	if err := os.WriteFile(summaryPath, []byte(summary+"\n"), 0644); err != nil {
-		log.Printf("[PAI Memory] Failed to write summary: %v", err)
+		memoryLogger.Error("Failed to write summary", "summary_path", summaryPath, "error", err)
 		return
 	}
 
-	log.Printf("[PAI Memory] Session %s flushed to %s", shortID, summaryPath)
+	memoryLogger.Info("Session flushed", "session_id", sessionID, "summary_path", summaryPath)
 
 	// Extract first summary bullet as a daily note
 	for _, line := range strings.Split(summary, "\n") {
@@ -304,7 +306,7 @@ func (mm *MemoryManager) AppendDailyNote(userID, note string) {
 
 	dir := filepath.Join(mm.basePath, "daily", userID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("[PAI Memory] Failed to create daily dir: %v", err)
+		memoryLogger.Error("Failed to create daily dir", "dir", dir, "error", err)
 		return
 	}
 
@@ -313,7 +315,7 @@ func (mm *MemoryManager) AppendDailyNote(userID, note string) {
 
 	f, err := os.OpenFile(dailyPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("[PAI Memory] Failed to open daily log: %v", err)
+		memoryLogger.Error("Failed to open daily log", "daily_path", dailyPath, "error", err)
 		return
 	}
 	defer f.Close()
@@ -342,7 +344,7 @@ func (mm *MemoryManager) CleanOldFiles() {
 	cleaned += mm.cleanDir(filepath.Join(mm.basePath, "summaries"), now, mm.retentionDays*6)
 
 	if cleaned > 0 {
-		log.Printf("[PAI Memory] Retention cleanup: removed %d old file(s)", cleaned)
+		memoryLogger.Info("Retention cleanup", "files_removed", cleaned)
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,6 +23,7 @@ import (
 
 var imageExtRe = regexp.MustCompile(`(?i)\.(png|jpe?g|gif|webp)$`)
 
+var botLogger = slog.With("component", "bot")
 
 type Bot struct {
 	api            *tgbotapi.BotAPI
@@ -43,9 +44,9 @@ func NewBot(cfg *Config, sessions *SessionManager, ralph *RalphManager, elevenLa
 	}
 
 	if cfg.Voice.Enabled && elevenLabsKey != "" {
-		log.Printf("[PAI Bridge] Voice enabled (voice_id=%s, model=%s)", cfg.Voice.VoiceID, cfg.Voice.Model)
+		botLogger.Info("Voice enabled", "voice_id", cfg.Voice.VoiceID, "model", cfg.Voice.Model)
 	} else if cfg.Voice.Enabled {
-		log.Printf("[PAI Bridge] Voice enabled in config but ELEVENLABS_API_KEY not set — voice disabled")
+		botLogger.Warn("Voice enabled in config but ELEVENLABS_API_KEY not set — voice disabled")
 	}
 
 	return &Bot{
@@ -71,7 +72,7 @@ func (b *Bot) Start() {
 
 	b.sendStartupNotification()
 
-	log.Println("[PAI Bridge] Bot is running.")
+	botLogger.Info("Bot is running")
 
 	var offset int
 	for {
@@ -87,7 +88,7 @@ func (b *Bot) Start() {
 		b.lastPollAt.Store(time.Now().UnixMilli())
 
 		if err != nil {
-			log.Printf("[PAI Bridge] Poll error: %v", err)
+			botLogger.Warn("Poll error", "error", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -110,13 +111,13 @@ func (b *Bot) sendStartupNotification() {
 	for _, uid := range b.config.AllowedUsers {
 		chatID, err := strconv.ParseInt(uid, 10, 64)
 		if err != nil {
-			log.Printf("[PAI Bridge] Startup notify: invalid user ID %q: %v", uid, err)
+			botLogger.Warn("Startup notify: invalid user ID", "user_id", uid, "error", err)
 			continue
 		}
 		b.send(chatID, "PAI online.")
 		if b.config.Voice.Enabled && b.elevenLabsKey != "" {
 			if err := b.synthesizeAndSendVoice(chatID, "PAI online."); err != nil {
-				log.Printf("[PAI Bridge] Startup voice failed for %s: %v", uid, err)
+				botLogger.Warn("Startup voice failed", "user_id", uid, "error", err)
 			}
 		}
 	}
@@ -348,7 +349,7 @@ func (b *Bot) handleMessage(chatID int64, userID, text string, attachment *Attac
 		if result.FollowUp == nil {
 			return
 		}
-		log.Printf("[PAI Bridge] Processing %d queued follow-up message(s) for user %s", result.FollowUp.Count, userID)
+		botLogger.Info("Processing queued follow-up messages", "user_id", userID, "count", result.FollowUp.Count)
 		curText = result.FollowUp.Text
 		curAttachment = result.FollowUp.Attachment
 	}
@@ -374,7 +375,7 @@ func (b *Bot) deliverResult(chatID int64, result *MessageResult) {
 		msg.ParseMode = tgbotapi.ModeHTML
 		if _, err := b.api.Send(msg); err != nil {
 			// Fallback to plain text
-			log.Printf("[PAI Bridge] HTML parse failed, falling back: %v", err)
+			botLogger.Warn("HTML parse failed, falling back to plain text", "error", err)
 			msg.ParseMode = ""
 			b.api.Send(msg)
 		}
@@ -383,7 +384,7 @@ func (b *Bot) deliverResult(chatID int64, result *MessageResult) {
 	// Synthesize and send voice note if VOICE: directive present
 	if voiceText != "" && b.config.Voice.Enabled && b.elevenLabsKey != "" {
 		if err := b.synthesizeAndSendVoice(chatID, voiceText); err != nil {
-			log.Printf("[PAI Bridge] Voice synthesis failed: %v", err)
+			botLogger.Warn("Voice synthesis failed", "error", err, "chat_id", chatID)
 		}
 	}
 
@@ -416,18 +417,18 @@ func (b *Bot) deliverResult(chatID int64, result *MessageResult) {
 			continue
 		}
 		if !isSafeSendPath(fp) {
-			log.Printf("[PAI Bridge] SEND blocked (path not in allowlist): %s", fp)
+			botLogger.Warn("SEND blocked: path not in allowlist", "path", fp, "chat_id", chatID)
 			continue
 		}
 		if imageExtRe.MatchString(fp) {
 			photo := tgbotapi.NewPhoto(chatID, tgbotapi.FilePath(fp))
 			if _, err := b.api.Send(photo); err != nil {
-				log.Printf("[PAI Bridge] Failed to send photo %s: %v", fp, err)
+				botLogger.Warn("Failed to send photo", "path", fp, "error", err, "chat_id", chatID)
 			}
 		} else {
 			doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(fp))
 			if _, err := b.api.Send(doc); err != nil {
-				log.Printf("[PAI Bridge] Failed to send document %s: %v", fp, err)
+				botLogger.Warn("Failed to send document", "path", fp, "error", err, "chat_id", chatID)
 			}
 		}
 	}
@@ -588,7 +589,7 @@ func extractRalphDirectives(text string) (string, []*RalphDirective) {
 		if match := ralphRe.FindStringSubmatch(trimmed); match != nil {
 			var rd RalphDirective
 			if err := json.Unmarshal([]byte(match[1]), &rd); err != nil {
-				log.Printf("[PAI Bridge] Failed to parse RALPH directive: %v", err)
+				botLogger.Warn("Failed to parse RALPH directive", "error", err, "raw", match[1])
 				cleanLines = append(cleanLines, line)
 				continue
 			}
@@ -691,7 +692,7 @@ func (b *Bot) synthesizeAndSendVoice(chatID int64, text string) error {
 		return fmt.Errorf("send voice: %w", err)
 	}
 
-	log.Printf("[PAI Bridge] Voice note sent (%d bytes OGG, text: %q)", len(oggData), truncate(text, 50))
+	botLogger.Info("Voice note sent", "bytes", len(oggData), "text_preview", truncate(text, 50), "chat_id", chatID)
 	return nil
 }
 

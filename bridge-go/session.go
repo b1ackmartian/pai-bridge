@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +17,8 @@ import (
 
 	"github.com/google/uuid"
 )
+
+var sessionLogger = slog.With("component", "session")
 
 type Session struct {
 	ID              string `json:"id"`
@@ -88,7 +90,7 @@ func NewSessionManager(cfg *Config, memory *MemoryManager, cred *syscall.Credent
 
 	loc, err := time.LoadLocation(cfg.Sessions.Timezone)
 	if err != nil {
-		log.Printf("[PAI Bridge] Invalid timezone %q, falling back to UTC: %v", cfg.Sessions.Timezone, err)
+		sessionLogger.Warn("Invalid timezone, falling back to UTC", "timezone", cfg.Sessions.Timezone, "error", err)
 		loc = time.UTC
 	}
 
@@ -121,7 +123,7 @@ func (sm *SessionManager) loadFromDisk() {
 		s.Status = "active"
 		sm.sessions[s.UserID] = s
 	}
-	log.Printf("[PAI Bridge] Loaded %d session(s) from disk.", len(sessions))
+	sessionLogger.Info("Loaded sessions from disk", "session_count", len(sessions))
 }
 
 func (sm *SessionManager) saveToDisk() {
@@ -135,7 +137,7 @@ func (sm *SessionManager) saveToDisk() {
 
 	data, err := json.MarshalIndent(sessions, "", "  ")
 	if err != nil {
-		log.Printf("[PAI Bridge] Failed to marshal sessions: %v", err)
+		sessionLogger.Error("Failed to marshal sessions", "error", err)
 		return
 	}
 	os.WriteFile(path, data, 0644)
@@ -239,11 +241,11 @@ func (sm *SessionManager) FlushAll() {
 		return
 	}
 
-	log.Printf("[PAI Bridge] Flushing %d session(s) before shutdown...", len(toFlush))
+	sessionLogger.Info("Flushing sessions before shutdown", "session_count", len(toFlush))
 	for _, sf := range toFlush {
 		sm.memory.FlushSession(sf.userID, sf.sessionID, sf.model)
 	}
-	log.Printf("[PAI Bridge] Shutdown flush complete")
+	sessionLogger.Info("Shutdown flush complete")
 }
 
 func (sm *SessionManager) CleanStale() int {
@@ -277,7 +279,7 @@ func (sm *SessionManager) CleanStale() int {
 		} else if dailyResetActive && idleMs > 5*60_000 {
 			// Daily reset: clean if idle 5+ min during reset hour
 			shouldClean = true
-			log.Printf("[PAI Bridge] Daily reset (hour=%d) cleaning session %s", resetHour, s.ID[:8])
+			sessionLogger.Info("Daily reset cleaning session", "reset_hour", resetHour, "session_id", s.ID)
 		}
 
 		if shouldClean {
@@ -374,7 +376,7 @@ func (sm *SessionManager) SendMessage(userID string, text string, attachment *At
 		session.pending = append(session.pending, pendingMessage{Text: text, Attachment: attachment})
 		depth := len(session.pending)
 		session.pendingMu.Unlock()
-		log.Printf("[PAI Bridge] Message queued for user %s (%d pending)", userID, depth)
+		sessionLogger.Info("Message queued", "user_id", userID, "queue_depth", depth)
 		return &MessageResult{Queued: depth}, nil
 	}
 
@@ -627,7 +629,7 @@ func (sm *SessionManager) SendMessage(userID string, text string, attachment *At
 	// signal kill, OOM, context timeout, etc.).
 	if exitErr != nil {
 		if len(queued) > 0 {
-			log.Printf("[PAI Bridge] Dropped %d queued message(s) for session %s due to subprocess error", len(queued), session.ID[:8])
+			sessionLogger.Warn("Dropped queued messages due to subprocess error", "session_id", session.ID, "dropped_count", len(queued))
 		}
 		queued = nil // release for GC
 		stderrText := stderrBuf.String()
@@ -659,7 +661,7 @@ func (sm *SessionManager) SendMessage(userID string, text string, attachment *At
 	if len(queued) > 0 {
 		batchText, batchAttachment := session.buildBatch(queued)
 		if batchText != "" || batchAttachment != nil {
-			log.Printf("[PAI Bridge] %d queued message(s) ready for follow-up (user %s)", len(queued), userID)
+			sessionLogger.Info("Queued messages ready for follow-up", "user_id", userID, "follow_up_count", len(queued))
 			result.FollowUp = &FollowUp{
 				Text:       batchText,
 				Attachment: batchAttachment,
@@ -724,7 +726,7 @@ func (s *Session) takePending() []pendingMessage {
 // can't process them). Logs a warning if messages were dropped.
 func (s *Session) drainPending() {
 	if dropped := len(s.takePending()); dropped > 0 {
-		log.Printf("[PAI Bridge] Dropped %d queued message(s) for session %s due to error", dropped, s.ID[:8])
+		sessionLogger.Warn("Dropped queued messages due to error", "session_id", s.ID, "dropped_count", dropped)
 	}
 }
 
