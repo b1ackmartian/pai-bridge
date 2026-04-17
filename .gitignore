@@ -1,6 +1,7 @@
 # Go binaries
 pai-bridge
 pai-bridge-*
+bridge-go/bridge
 
 # IDE
 .idea/
